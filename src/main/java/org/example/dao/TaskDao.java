@@ -1,5 +1,6 @@
 package org.example.dao;
 
+import org.example.exception.DaoException;
 import org.example.model.Task;
 import org.example.util.ConnectionManager;
 
@@ -11,123 +12,119 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+
+// must be singleton 
 public class TaskDao {
+    private static final TaskDao INSTANCE = new TaskDao();  // for Singleton
 
-    // Получение задачи по ID
-    public Optional<Task> findById(Integer id) throws SQLException {
-        String sql = """
-                SELECT * FROM tasks WHERE id = ?\s
-               \s""";
+    // SQL requests
+    private static final String FIND_BY_ID_SQL = """
+            SELECT * FROM tasks WHERE id = ?
+            """;
+    private static final String SAVE_SQL = """
+            INSERT INTO tasks (title, description, is_completed)
+            VALUES (?, ?, ?)
+            RETURNING id, created_at
+            """;
+    private static final String FIND_ALL_SQL = """
+            SELECT * FROM tasks;
+            """;
+    private static final String UPDATE_SQL = """
+            UPDATE tasks SET title = ?, description = ?, is_completed = ? WHERE id = ?
+            """;
+    private static final String DELETE_SQL = """
+            DELETE FROM tasks WHERE id = ?
+            """;
+    private static final String SAVE_WITH_TRANSACTION_SQL = """
+            INSERT INTO tasks (title, description) VALUES (?, ?) RETURNING id
+            """;
 
-        try(var connection = ConnectionManager.open();
-        var statement = connection.prepareStatement(sql)) {
+
+    // private constructor for Singleton
+    private TaskDao() {}
+
+    // for Singleton
+    public static TaskDao getInstance() {
+        return INSTANCE;
+    }
+
+    public Optional<Task> findById(Integer id) {
+        try(var connection = ConnectionManager.get();
+        var statement = connection.prepareStatement(FIND_BY_ID_SQL)) {
             statement.setInt(1, id);
 
             try (var result = statement.executeQuery()) {
                 if (result.next()) {
-                    Task task = new Task();
-                    task.setId(result.getInt("id"));
-                    task.setTitle(result.getString("title"));
-                    task.setDescription(result.getString("description"));
-                    task.setIsCompleted(result.getBoolean("is_completed"));
-
-                    return Optional.of(task);
+                    return Optional.of(mapTask(result));
                 }
             }
-        } catch (SQLException e) {
-            throw new RuntimeException("Ошибка при поиске задачи ", e);
+        } catch (SQLException | InterruptedException throwables) {
+            throw new DaoException("Failed to find task by id: " + id, throwables);
         }
 
         return Optional.empty();
     }
 
-    // CRUD - Create
+    // Works like create and update
     public Task save(Task task) {
-        String sql = "INSERT INTO tasks (title, description, is_completed) " +
-                "VALUES (?, ?, ?) " +
-                "RETURNING id, created_at";
-
-        try (var connection = ConnectionManager.open();
-             var statement =  connection.prepareStatement(sql);) {
-
+        try (var connection = ConnectionManager.get();
+             var statement =  connection.prepareStatement(SAVE_SQL);) {
+            boolean isCompleted = task.getIsCompleted() != null && task.getIsCompleted();
             // Установка параметров запроса
             statement.setString(1, task.getTitle());
             statement.setString(2, task.getDescription());
-            statement.setBoolean(3, task.getIsCompleted() != null && task.getIsCompleted());
-
+            statement.setBoolean(3, isCompleted);
 
             var resultSet = statement.executeQuery();   // Выполнение запроса и получение ResultSet с данными
-
             // Если запись добавлена - обновляем поля task
             if (resultSet.next()) {
                 task.setId(resultSet.getInt("id"));
                 task.setCreatedAt(resultSet.getTimestamp("created_at").toLocalDateTime());
             }
-
             return task;
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        } catch (SQLException | InterruptedException throwables) {
+            throw new DaoException("Failed to save task: ", throwables);
         }
     }
 
-    // CRUD - Read
-    public List<Task> findAll() throws SQLException {
+    public List<Task> findAll() {
         List<Task> tasks = new ArrayList<>();
-        String sql = """
-            SELECT * FROM tasks;
-        """;
-
-        try (var connection = ConnectionManager.open();
+        try (var connection = ConnectionManager.get();
              var statement = connection.createStatement();
-             var resultSet = statement.executeQuery(sql)) {
-
+             var resultSet = statement.executeQuery(FIND_ALL_SQL)) {
             while (resultSet.next()) {
-                Task task = new Task();
-                task.setId(resultSet.getInt("id"));
-                task.setTitle(resultSet.getString("title"));
-                task.setDescription(resultSet.getString("description"));
-                task.setIsCompleted(resultSet.getBoolean("is_completed"));
-                task.setCreatedAt(resultSet.getTimestamp("created_at").toLocalDateTime());
-                tasks.add(task);
+                tasks.add(mapTask(resultSet));
             }
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        } catch (SQLException | InterruptedException throwables) {
+            throw new DaoException("Failed to read tasks: ", throwables);
         }
         return tasks;
     }
 
-    // CRUD - Update
-    public void update(Task task) throws SQLException {
-        String sql = """
-                UPDATE tasks SET title = ?, description = ?, is_completed = ? WHERE id = ?
-                """;
-        try (var connection = ConnectionManager.open();
-        var statement = connection.prepareStatement(sql)) {
+    public void update(Task task) {
+        try (var connection = ConnectionManager.get();
+        var statement = connection.prepareStatement(UPDATE_SQL)) {
             statement.setString(1, task.getTitle());
             statement.setString(2, task.getDescription());
             statement.setBoolean(3, task.getIsCompleted());
             statement.setInt(4, task.getId());
-
             int rowsUpdated = statement.executeUpdate();
             if (rowsUpdated == 0) {
                 throw new SQLException("Задача с ID " + task.getId() + " не найдена");
             }
+        } catch (SQLException | InterruptedException throwables) {
+            throw new DaoException("Failed to update task: ", throwables);
         }
     }
 
-    // CRUD - Delete
-    public boolean delete(Integer id) throws SQLException {
-        String sql = """
-                DELETE FROM tasks WHERE id = ?
-                """;
-
-        try(var connection = ConnectionManager.open();
-            var statement = connection.prepareStatement(sql)) {
-
+    public boolean delete(Integer id) {
+        try (var connection = ConnectionManager.get();
+            var statement = connection.prepareStatement(DELETE_SQL)) {
             statement.setInt(1, id);
             int rowsDeleted = statement.executeUpdate();
-
             return rowsDeleted > 0;
+        } catch (SQLException | InterruptedException throwables) {
+            throw new DaoException("Failed to delete task: ", throwables);
         }
     }
 
@@ -135,13 +132,10 @@ public class TaskDao {
     public Task saveWithTransaction(Task task) {
         Connection connection = null;
         try {
-            connection = ConnectionManager.open();  // установка соединения
+            connection = ConnectionManager.get();  // установка соединения
             ConnectionManager.beginTransaction(connection); // начинаем транзакцию
 
-            String sql = """
-                        INSERT INTO tasks (title, description) VALUES (?, ?) RETURNING id
-                        """;  // выполняем SQL запрос
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            try (PreparedStatement statement = connection.prepareStatement(SAVE_WITH_TRANSACTION_SQL)) {
                 statement.setString(1, task.getTitle());
                 statement.setString(2, task.getDescription());
 
@@ -151,20 +145,31 @@ public class TaskDao {
                 }
             }
 
-            ConnectionManager.commitTransaction(connection);    // если все хорошо - коммитим
+            ConnectionManager.commitTransaction(connection);    // если все хорошо - коммит
             return task;
-        } catch (SQLException e) {
-            ConnectionManager.rollbackTransaction(connection);
-            throw new RuntimeException("Ошибка при сохранении задачи", e);
+        } catch (Exception e) {  // Ловим все исключения
+            if (connection != null) {
+                ConnectionManager.rollbackTransaction(connection);  // ← ROLLBACK
+            }
+            throw new DaoException("Transaction error ", e);
         } finally {
             if (connection != null) {
                 try {
-                    connection.close();
+                    connection.close();  // Закрываем соединение
                 } catch (SQLException e) {
-                    System.err.println("Ошибка при закрытии соединения: " + e.getMessage());
+                    System.err.println("Error closing connection: " + e.getMessage());
                 }
             }
-
         }
+    }
+
+    private Task mapTask(ResultSet resultSet) throws SQLException {
+        Task task = new Task();
+        task.setId(resultSet.getInt("id"));
+        task.setTitle(resultSet.getString("title"));
+        task.setDescription(resultSet.getString("description"));
+        task.setIsCompleted(resultSet.getBoolean("is_completed"));
+        task.setCreatedAt(resultSet.getTimestamp("created_at").toLocalDateTime());
+        return task;
     }
 }

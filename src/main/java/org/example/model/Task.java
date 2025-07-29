@@ -9,6 +9,17 @@ public class Task {
     private Boolean isCompleted;
     private LocalDateTime createdAt;
 
+    public Task(LocalDateTime createdAt, String description, Integer id, Boolean isCompleted, String title) {
+        this.createdAt = createdAt;
+        this.description = description;
+        this.id = id;
+        this.isCompleted = isCompleted;
+        this.title = title;
+    }
+
+    public Task() {
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -47,5 +58,16 @@ public class Task {
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    @Override
+    public String toString() {
+        return "Task{" +
+                "createdAt=" + createdAt +
+                ", id=" + id +
+                ", title='" + title + '\'' +
+                ", description='" + description + '\'' +
+                ", isCompleted=" + isCompleted +
+                '}';
     }
 }
