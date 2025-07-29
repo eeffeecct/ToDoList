@@ -16,10 +16,11 @@ import java.util.Optional;
 // must be singleton 
 public class TaskDao {
     private static final TaskDao INSTANCE = new TaskDao();  // for Singleton
-
     // SQL requests
     private static final String FIND_BY_ID_SQL = """
-            SELECT * FROM tasks WHERE id = ?
+            SELECT *
+            FROM tasks
+            WHERE id = ?
             """;
     private static final String SAVE_SQL = """
             INSERT INTO tasks (title, description, is_completed)
@@ -27,18 +28,23 @@ public class TaskDao {
             RETURNING id, created_at
             """;
     private static final String FIND_ALL_SQL = """
-            SELECT * FROM tasks;
+            SELECT *
+            FROM tasks;
             """;
     private static final String UPDATE_SQL = """
-            UPDATE tasks SET title = ?, description = ?, is_completed = ? WHERE id = ?
+            UPDATE tasks
+            SET title = ?, description = ?, is_completed = ?
+            WHERE id = ?
             """;
     private static final String DELETE_SQL = """
-            DELETE FROM tasks WHERE id = ?
+            DELETE FROM tasks
+            WHERE id = ?
             """;
     private static final String SAVE_WITH_TRANSACTION_SQL = """
-            INSERT INTO tasks (title, description) VALUES (?, ?) RETURNING id
+            INSERT INTO tasks (title, description)
+            VALUES (?, ?)
+            RETURNING id
             """;
-
 
     // private constructor for Singleton
     private TaskDao() {}
@@ -58,8 +64,8 @@ public class TaskDao {
                     return Optional.of(mapTask(result));
                 }
             }
-        } catch (SQLException | InterruptedException throwables) {
-            throw new DaoException("Failed to find task by id: " + id, throwables);
+        } catch (SQLException | InterruptedException throwable) {
+            throw new DaoException("Failed to find task by id: " + id, throwable);
         }
 
         return Optional.empty();
@@ -68,7 +74,7 @@ public class TaskDao {
     // Works like create and update
     public Task save(Task task) {
         try (var connection = ConnectionManager.get();
-             var statement =  connection.prepareStatement(SAVE_SQL);) {
+             var statement =  connection.prepareStatement(SAVE_SQL)) {
             boolean isCompleted = task.getIsCompleted() != null && task.getIsCompleted();
             // Установка параметров запроса
             statement.setString(1, task.getTitle());
@@ -82,8 +88,8 @@ public class TaskDao {
                 task.setCreatedAt(resultSet.getTimestamp("created_at").toLocalDateTime());
             }
             return task;
-        } catch (SQLException | InterruptedException throwables) {
-            throw new DaoException("Failed to save task: ", throwables);
+        } catch (SQLException | InterruptedException throwable) {
+            throw new DaoException("Failed to save task: ", throwable);
         }
     }
 
@@ -95,8 +101,8 @@ public class TaskDao {
             while (resultSet.next()) {
                 tasks.add(mapTask(resultSet));
             }
-        } catch (SQLException | InterruptedException throwables) {
-            throw new DaoException("Failed to read tasks: ", throwables);
+        } catch (SQLException | InterruptedException throwable) {
+            throw new DaoException("Failed to read tasks: ", throwable);
         }
         return tasks;
     }
@@ -112,8 +118,8 @@ public class TaskDao {
             if (rowsUpdated == 0) {
                 throw new SQLException("Задача с ID " + task.getId() + " не найдена");
             }
-        } catch (SQLException | InterruptedException throwables) {
-            throw new DaoException("Failed to update task: ", throwables);
+        } catch (SQLException | InterruptedException throwable) {
+            throw new DaoException("Failed to update task: ", throwable);
         }
     }
 
@@ -123,12 +129,11 @@ public class TaskDao {
             statement.setInt(1, id);
             int rowsDeleted = statement.executeUpdate();
             return rowsDeleted > 0;
-        } catch (SQLException | InterruptedException throwables) {
-            throw new DaoException("Failed to delete task: ", throwables);
+        } catch (SQLException | InterruptedException throwable) {
+            throw new DaoException("Failed to delete task: ", throwable);
         }
     }
 
-    // Атомарность
     public Task saveWithTransaction(Task task) {
         Connection connection = null;
         try {
