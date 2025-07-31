@@ -1,5 +1,6 @@
 package org.example.dao;
 
+import org.example.dto.TaskFilter;
 import org.example.exception.DaoException;
 import org.example.model.Task;
 import org.example.util.ConnectionManager;
@@ -12,6 +13,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import static java.util.stream.Collectors.joining;
+
+
+// Класс для взаимодействия с базой данных
 
 // must be singleton 
 public class TaskDao {
@@ -29,7 +34,7 @@ public class TaskDao {
             """;
     private static final String FIND_ALL_SQL = """
             SELECT *
-            FROM tasks;
+            FROM tasks
             """;
     private static final String UPDATE_SQL = """
             UPDATE tasks
@@ -93,6 +98,45 @@ public class TaskDao {
         }
     }
 
+    public List<Task> findAll(TaskFilter filter) {
+        List<Object> parameters = new ArrayList<>();
+        List<String> whereSql = new ArrayList<>();
+
+        if (filter.description() != null) {
+            whereSql.add("description LIKE ?");
+            parameters.add(filter.description());
+        }
+        if (filter.isCompleted() != null) {
+            whereSql.add("is_completed = ?");
+            parameters.add(filter.isCompleted());
+        }
+
+        parameters.add(filter.limit());
+        parameters.add(filter.offset());
+        var where = whereSql.stream()
+                .collect(joining(" AND ", " WHERE ", " LIMIT ? OFFSET ? "));
+
+        
+        var sql = FIND_ALL_SQL + where;
+
+        try (var connection = ConnectionManager.get();
+        var preparedStatement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < parameters.size(); i++) {
+                preparedStatement.setObject(i + 1, parameters.get(i));
+            }
+            System.out.println(preparedStatement);
+            var resultSet = preparedStatement.executeQuery();
+            List<Task> tasks = new ArrayList<>();
+            while (resultSet.next()) {
+                tasks.add(mapTask(resultSet));
+            }
+            return tasks;
+        } catch (SQLException | InterruptedException throwable) {
+            throw new DaoException(throwable);
+        }
+    }
+
+    // такой метод используется для справочных таблиц
     public List<Task> findAll() {
         List<Task> tasks = new ArrayList<>();
         try (var connection = ConnectionManager.get();

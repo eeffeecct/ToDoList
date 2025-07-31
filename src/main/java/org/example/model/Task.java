@@ -3,7 +3,7 @@ package org.example.model;
 import java.time.LocalDateTime;
 
 public class Task {
-    private Integer id;
+    private Integer id; // иногда id используют как сущность
     private String title;
     private String description;
     private Boolean isCompleted;
